@@ -29,7 +29,7 @@ class BuildRequest(BaseModel):
     facility: str = Field(min_length=1, max_length=60)
     x: float = Field(ge=0.06, le=0.94)
     y: float = Field(ge=0.08, le=0.92)
-    radius: float = Field(default=0.13, ge=0.06, le=0.23)
+    radius: float = Field(default=0.13, ge=0.06, le=0.32)
 
 @app.get('/')
 def index():

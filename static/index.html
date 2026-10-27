@@ -123,6 +123,17 @@
 .patch{z-index:2}.zone{z-index:6}
 .aiMark{position:absolute;border:2px dashed #fabb43;background:#f8c44330;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:9;display:none}
 
+
+/* AI 자유개발: 원본 자연 산지를 넓게 사용하는 전용 화면 */
+.aiRange{display:flex;align-items:center;gap:12px;font-size:13px}
+.aiRange input[type=range]{flex:1;min-width:0;accent-color:#2f69d9}
+.aiRange output{width:50px;text-align:right;font-weight:800;color:#245eab}
+.aiModeNote{background:#fff;border:1px solid #c8dff5;padding:9px 11px;border-radius:10px;font-size:12px;line-height:1.5}
+.sceneWrap.aiOpen .patch,.sceneWrap.aiOpen .zone{display:none!important}
+.sceneWrap.aiOpen .scene{z-index:0}
+.sceneWrap.aiOpen .aiOverlay{z-index:3}
+.aiMark{z-index:12}
+#aiMode.active{background:#146b4c;color:#fff}
 </style>
 </head>
 <body>
@@ -163,8 +174,12 @@
 <h3>✨ AI 자유 개발 (실험 기능)</h3>
 <label for="aiFacility">학생이 만들고 싶은 시설</label>
 <input id="aiFacility" maxlength="60" value="캠핑장" placeholder="예: 캠핑장, 전망대, 케이블카">
+<button type="button" id="aiMode" class="secondary" aria-pressed="false">🌲 AI 자유개발 전용 화면으로 전환</button>
+<div class="aiModeNote" id="aiModeNote">기본 화면입니다. 전용 화면에서는 기존 정답 구역과 시설을 숨겨 산 전체를 자유롭게 활용할 수 있어요.</div>
+<label for="aiRadius">시설을 설치할 영역 크기</label>
+<div class="aiRange"><span>작게</span><input id="aiRadius" type="range" min="6" max="32" step="1" value="13"><span>크게</span><output id="aiRadiusValue">13%</output></div>
 <div class="rowBtns"><button type="button" id="aiPick" class="primary">산에서 위치 지정</button><button type="button" id="aiGenerate" class="secondary" disabled>AI로 만들기</button><button type="button" id="aiUndo" class="secondary" disabled>AI 되돌리기</button></div>
-<small>위치를 정한 뒤 ‘AI로 만들기’를 누르세요. 사진 편집에는 인터넷과 서버 API 설정이 필요합니다. 원래 시설 6개는 기존처럼 작동합니다.</small>
+<small>전용 화면에서 빈 산비탈을 넓게 선택할 수 있습니다. 영역 크기를 먼저 조절하고 설치 지점을 선택하세요. AI 편집에는 인터넷과 서버 API가 필요합니다.</small>
 <div id="aiMsg" role="status">AI 서버 연결 상태를 확인 중입니다.</div>
 </section>
   </aside>
@@ -478,37 +493,58 @@ document.getElementById("patch-wind").style.backgroundImage = `url('${WIND_IMAGE
 
 <script>
 (()=>{
-  const area=document.getElementById('sceneWrap'), message=document.getElementById('aiMsg'), marker=document.getElementById('aiMark');
-  const overlay=document.getElementById('aiOverlay'), pick=document.getElementById('aiPick'), build=document.getElementById('aiGenerate'), undo=document.getElementById('aiUndo');
-  const facility=document.getElementById('aiFacility');
-  let pos=null, choosing=false, image=null, history=[];
+  const area=document.getElementById('sceneWrap'),message=document.getElementById('aiMsg'),marker=document.getElementById('aiMark');
+  const overlay=document.getElementById('aiOverlay'),pick=document.getElementById('aiPick'),build=document.getElementById('aiGenerate'),undo=document.getElementById('aiUndo');
+  const facility=document.getElementById('aiFacility'),range=document.getElementById('aiRadius'),rangeValue=document.getElementById('aiRadiusValue');
+  const modeButton=document.getElementById('aiMode'),modeNote=document.getElementById('aiModeNote');
+  let pos=null,choosing=false,image=null,history=[],openMode=false,busy=false;
   const setMessage=m=>{message.textContent=m};
-  fetch('/api/health').then(r=>r.json()).then(j=>setMessage(j.ready?'AI 서버 연결됨. 시설 이름을 입력하고 위치를 지정하세요.':'서버는 연결됐지만 AI 키가 아직 설정되지 않았습니다.')).catch(()=>setMessage('웹 서버 연결 실패. 배포된 사이트 주소에서 이용하세요.'));
-  pick.addEventListener('click',()=>{choosing=true;area.classList.add('aiPicking');setMessage('산지에서 시설을 만들 위치를 클릭하세요.');});
+  const size=()=>Number(range.value)/100;
+  function updateMarker(){
+    rangeValue.textContent=range.value+'%';
+    if(!pos)return;
+    marker.style.left=(pos.x*100)+'%';marker.style.top=(pos.y*100)+'%';
+    marker.style.width=(size()*200)+'%';
+    marker.style.height=(size()*0.76*200)+'%';
+  }
+  range.addEventListener('input',updateMarker);
+  modeButton.addEventListener('click',()=>{
+    openMode=!openMode;area.classList.toggle('aiOpen',openMode);
+    modeButton.classList.toggle('active',openMode);modeButton.setAttribute('aria-pressed',String(openMode));
+    modeButton.textContent=openMode?'↩ 기존 6개 시설 화면으로 돌아가기':'🌲 AI 자유개발 전용 화면으로 전환';
+    modeNote.textContent=openMode?'AI 전용 화면: 정해진 시설과 배치 구역은 잠시 숨겼습니다. 자연 산지의 빈 공간을 자유롭게 선택하세요.':'기본 화면: 정해진 6개 시설을 배치할 수 있습니다. AI 전용 화면에서 자유로운 개발이 가능합니다.';
+    marker.style.display=pos?'block':'none';
+  });
+  fetch('/api/health').then(r=>r.json()).then(j=>setMessage(j.ready?'AI 서버 연결됨. 시설 이름과 개발할 지역의 크기를 선택하세요.':'서버는 연결됐지만 AI 키가 아직 설정되지 않았습니다.')).catch(()=>setMessage('웹 서버 연결 실패. 배포된 사이트 주소에서 이용하세요.'));
+  pick.addEventListener('click',()=>{
+    if(busy)return;
+    if(!openMode){openMode=true;area.classList.add('aiOpen');modeButton.classList.add('active');modeButton.setAttribute('aria-pressed','true');modeButton.textContent='↩ 기존 6개 시설 화면으로 돌아가기';modeNote.textContent='AI 전용 화면: 산 전체를 자유롭게 선택할 수 있습니다.';}
+    choosing=true;area.classList.add('aiPicking');setMessage('빈 산지에서 시설을 설치할 위치를 클릭하세요.');
+  });
   area.addEventListener('click',e=>{
-    if(!choosing)return;
-    e.preventDefault(); e.stopPropagation(); choosing=false; area.classList.remove('aiPicking');
+    if(!choosing||busy)return;
+    e.preventDefault();e.stopPropagation();choosing=false;area.classList.remove('aiPicking');
     const rect=area.getBoundingClientRect();
     pos={x:Math.min(.94,Math.max(.06,(e.clientX-rect.left)/rect.width)),y:Math.min(.92,Math.max(.08,(e.clientY-rect.top)/rect.height))};
-    marker.style.left=(pos.x*100)+'%';marker.style.top=(pos.y*100)+'%';marker.style.width='19%';marker.style.height='23%'; marker.style.display='block';
-    build.disabled=false;setMessage('위치가 선택되었습니다. AI로 만들기를 누르세요.');
+    updateMarker();marker.style.display='block';build.disabled=false;setMessage('선택한 영역을 확인하고 AI로 만들기를 누르세요. 슬라이더로 영역을 다시 조절할 수도 있습니다.');
   },true);
   build.addEventListener('click',async()=>{
-    if(!pos)return;const name=facility.value.trim();if(!name){setMessage('시설 이름을 입력하세요.');return;}
-    build.disabled=true;pick.disabled=true;setMessage('AI가 기존 산지의 선택한 구역을 편집하고 있습니다…');
+    if(!pos||busy)return;const name=facility.value.trim();if(!name){setMessage('시설 이름을 입력하세요.');return;}
+    busy=true;build.disabled=true;pick.disabled=true;modeButton.disabled=true;range.disabled=true;
+    setMessage('AI가 선택한 산지 영역을 편집하고 있습니다…');
     try{
-      const resp=await fetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({facility:name,x:pos.x,y:pos.y,radius:.12,image:image})});
-      const data=await resp.json();
-      if(!resp.ok)throw Error(data.detail||'서버 오류');
+      const resp=await fetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({facility:name,x:pos.x,y:pos.y,radius:size(),image:image})});
+      const data=await resp.json();if(!resp.ok)throw Error(data.detail||'서버 오류');
       history.push(image);image=data.image;overlay.src=image;overlay.hidden=false;undo.disabled=false;
-      marker.style.display='none';setMessage('“'+name+'” 설치 완료! 다른 시설도 추가할 수 있어요.');
+      marker.style.display='none';pos=null;setMessage('“'+name+'” 설치 완료! 다른 시설도 추가할 수 있어요.');
     }catch(err){setMessage('생성 실패: '+err.message)}
-    finally{pick.disabled=false;build.disabled=false}
+    finally{busy=false;pick.disabled=false;build.disabled=!pos;modeButton.disabled=false;range.disabled=false;}
   });
   undo.addEventListener('click',()=>{
-    if(!history.length)return;image=history.pop();overlay.hidden=!image; if(image)overlay.src=image;else overlay.removeAttribute('src');
+    if(!history.length||busy)return;image=history.pop();overlay.hidden=!image;if(image)overlay.src=image;else overlay.removeAttribute('src');
     undo.disabled=history.length===0;setMessage('마지막 AI 개발을 취소했습니다.');
   });
+  updateMarker();
 })();
 </script>
 
